@@ -1,0 +1,24 @@
+# Copyright 2021 chris
+# See LICENSE file for licensing details.
+name: vault
+description: |
+  TEMPLATE-TODO: fill out the charm's description
+summary: |
+  TEMPLATE-TODO: fill out the charm's summary
+
+containers:
+  vault:
+    resource: vault-image
+    mounts:
+      - storage: raft-storage
+        location: /srv
+
+resources:
+  vault-image:
+    type: oci-image
+    description: OCI image for Vault
+
+storage:
+  raft-storage:
+    type: filesystem
+    minimum-size: 2G
