@@ -7,10 +7,57 @@
 #
 # Learn more about actions at: https://juju.is/docs/sdk/actions
 
-fortune:
-  description: Returns a pithy phrase.
+get-token:
+  description: Get a Vault token in the form of a wrapped secret
   params:
-    fail:
-      description: "Fail with this message"
+    app_role:
+      description: Approle to assign this token to
       type: string
-      default: ""
+      default: ''
+    cidr:
+      description: CIDR to restrict this app role to
+      typoe: string
+      default: '0.0.0.0/0'
+
+get-root-token:
+  description: Retrieve the root token
+
+new-policy:
+  description: Create a new policy
+  params:
+    name:
+      description: Name for the newly created policy
+      type: string
+      default: ''
+    hcl:
+      description: |
+        Vault HCL for the new policy. This is rendered as a Python
+        template with the backend interpolated.
+      type: string
+      default: |
+        path "{backend}/*" {{
+          capabilities = ["create", "read", "update", "delete", "list"]
+        }}
+        path "sys/internal/ui/mounts/{backend}" {{
+          capabilities = ["read"]
+        }}
+    backend:
+      description: Backend to use for policy
+      type: string
+      default: secret
+
+new-app-role:
+  description: Create a new app role
+  params:
+    name:
+      description: Name for the newly created approle
+      type: string
+      default: ''
+    policy:
+      description: Name of a policy to enable on this approle
+      type: string
+      default: ''
+    cidr:
+      description: CIDR to restrict this app role to
+      typoe: string
+      default: '0.0.0.0/0'

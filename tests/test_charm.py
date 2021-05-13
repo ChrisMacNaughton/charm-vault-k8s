@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from charm import VaultCharm
 from ops.model import ActiveStatus
@@ -16,6 +16,7 @@ class TestCharm(unittest.TestCase):
         self.harness = Harness(VaultCharm)
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
+        self.harness.charm.client = Mock()
 
     def test_vault_layer(self):
         # Test with empty config.
@@ -59,31 +60,66 @@ class TestCharm(unittest.TestCase):
         container = self.harness.model.unit.get_container("vault")
         self.assertEqual(container.get_service("vault").is_running(), True)
 
-    @patch("hvac.Client")
-    def test_on_install_initialized_unsealed(self, _client_mock):
-        mock_client = Mock()
-        mock_client.sys.is_initialized.return_value = True
-        mock_client.sys.is_sealed.return_value = False
-        _client_mock.return_value = mock_client
-        self.harness.charm._on_install("mock_event")
+    def test_on_config_changed_initialized_unsealed(self):
+        self.harness.charm.client.sys.is_initialized.return_value = True
+        self.harness.charm.client.sys.is_sealed.return_value = False
+        self.harness.charm._on_config_changed("mock_event")
 
-    @patch("hvac.Client")
-    def test_on_install_initialized(self, _client_mock):
-        mock_client = Mock()
-        mock_client.sys.is_initialized.return_value = False
-        mock_client.sys.is_sealed.return_value = True
-        mock_client.sys.initialize.return_value = {'root_token': 'test123', 'keys': [123]}
-        _client_mock.return_value = mock_client
-        self.harness.charm._on_install("mock_event")
-        mock_client.sys.initialize.assert_called_once_with(secret_shares=1, secret_threshold=1)
-        mock_client.sys.submit_unseal_key.assert_called_once_with(123)
+    def test_on_config_changed_initialized(self):
+        self.harness.charm.client.sys.is_initialized.return_value = False
+        self.harness.charm.client.sys.is_sealed.return_value = True
+        self.harness.charm.client.sys.initialize.return_value = {
+            'root_token': 'test123', 'keys': [123]}
+        self.harness.charm._on_config_changed("mock_event")
+        self.harness.charm.client.sys.initialize.assert_called_once_with(
+            secret_shares=1, secret_threshold=1)
+        self.harness.charm.client.sys.submit_unseal_key.assert_called_once_with(123)
 
-    @patch("hvac.Client")
-    def test_on_install_initialized_sealed(self, _client_mock):
-        mock_client = Mock()
-        mock_client.sys.is_initialized.return_value = True
-        mock_client.sys.is_sealed.return_value = True
-        _client_mock.return_value = mock_client
+    def test_on_config_changed_initialized_sealed(self):
+        self.harness.charm.client.sys.is_initialized.return_value = True
+        self.harness.charm.client.sys.is_sealed.return_value = True
         self.harness.charm._stored.unseal_key = 1234
-        self.harness.charm._on_install("mock_event")
-        mock_client.sys.submit_unseal_key.assert_called_once_with(1234)
+        self.harness.charm._on_config_changed("mock_event")
+        self.harness.charm.client.sys.submit_unseal_key.assert_called_once_with(1234)
+
+    def test_new_policy_action(self):
+        mock_event = Mock(params={
+            "name": "test",
+            "hcl": "{backend}", "backend": "secret",
+        })
+        self.harness.charm._new_policy_action(mock_event)
+        self.harness.charm.client.set_policy.assert_called_once_with("test", "secret")
+
+    def test_new_app_role_action(self):
+        mock_event = Mock(params={
+            'name': 'test-name',
+            'policy': 'policy-name',
+            'cidr': '10.1.2.3/32',
+        })
+        self.harness.charm._new_app_role_action(mock_event)
+        self.harness.charm.client.create_role.assert_called_once_with(
+            'test-name',
+            token_ttl='60s',
+            token_max_ttl='60s',
+            policies=['policy-name'],
+            bind_secret_id='true',
+            bound_cidr_list='10.1.2.3/32')
+
+    def test_get_token_action(self):
+        mock_event = Mock(params={
+            'name': 'test-name',
+            'cidr': '10.1.2.3/32',
+        })
+        self.harness.charm.client.write.return_value = {'wrap_info': {'token': 'token1234'}}
+        self.harness.charm._get_token_action(mock_event)
+        self.harness.charm.client.write.assert_called_once_with(
+            'auth/approle/role/test-name/secret-id',
+            wrap_ttl='1h', cidr_list='10.1.2.3/32'
+        )
+        mock_event.called_once_with({"token": "token1234"})
+
+    def test_get_root_token_action(self):
+        mock_event = Mock()
+        self.harness.charm._stored.root_token = "root-token-123"
+        self.harness.charm._get_root_token_action(mock_event)
+        mock_event.called_once_with({"token": "root-token-123"})

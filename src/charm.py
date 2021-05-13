@@ -30,23 +30,20 @@ class VaultCharm(CharmBase):
     """Charm the service."""
 
     _stored = StoredState()
+    client = None
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
-        # self.framework.observe(self.on.fortune_action, self._on_fortune_action)
+        # Actions
+        self.framework.observe(self.on.new_policy_action, self._new_policy_action)
+        self.framework.observe(self.on.new_app_role_action, self._new_app_role_action)
+        self.framework.observe(self.on.get_token_action, self._get_token_action)
+        self.framework.observe(self.on.get_root_token_action, self._get_root_token_action)
         self._stored.set_default(root_token=None, unseal_key=None)
-
-    def _on_install(self, _):
-        client = hvac.Client(url='http://localhost:8200')
-        if not client.sys.is_initialized():
-            result = client.sys.initialize(secret_shares=1, secret_threshold=1)
-            self._stored.root_token = result['root_token']
-            self._stored.unseal_key = result['keys'][0]
-        client.token = self._stored.root_token
-        if client.sys.is_sealed():
-            client.sys.submit_unseal_key(self._stored.unseal_key)
+        self.client = hvac.Client(url='http://localhost:8200')
+        if self._stored.root_token:
+            self.client.token = self._stored.root_token
 
     def _on_config_changed(self, event):
         """Handle the config-changed event"""
@@ -67,6 +64,15 @@ class VaultCharm(CharmBase):
             # Restart it and report a new status to Juju
             container.start("vault")
             logging.info("Restarted vault service")
+
+        if not self.client.sys.is_initialized():
+            result = self.client.sys.initialize(secret_shares=1, secret_threshold=1)
+            self._stored.root_token = result['root_token']
+            self._stored.unseal_key = result['keys'][0]
+        self.client.token = self._stored.root_token
+        if self.client.sys.is_sealed():
+            self.client.sys.submit_unseal_key(self._stored.unseal_key)
+
         # All is well, set an ActiveStatus
         self.unit.status = ActiveStatus()
 
@@ -94,6 +100,38 @@ class VaultCharm(CharmBase):
                 }
             },
         }
+
+    def _new_policy_action(self, event):
+        self.client.set_policy(
+            event.params['name'],
+            event.params['hcl'].format(
+                backend=event.params['backend']))
+
+    def _new_app_role_action(self, event):
+        approle_name = event.params['name']
+        policy_name = event.params['policy']
+        cidr = event.params['cidr']
+        # new_role = (approle_name not in self.client.list_roles())
+        self.client.create_role(
+            approle_name,
+            token_ttl='60s',
+            token_max_ttl='60s',
+            policies=[policy_name],
+            bind_secret_id='true',
+            bound_cidr_list=cidr
+        )
+
+    def _get_token_action(self, event):
+        name = event.params['name']
+        cidr = event.params['cidr']
+        response = self.client.write('auth/approle/role/{}/secret-id'.format(name),
+                                     wrap_ttl='1h', cidr_list=cidr)
+        event.set_results({"token": response['wrap_info']['token']})
+
+    def _get_root_token_action(self, event):
+        event.set_results({"token": self._stored.root_token})
+
+        # event.set_results({"token": token, "role_id": role_id})
 
     # def _on_fortune_action(self, event):
     #     """Just an example to show how to receive actions.
