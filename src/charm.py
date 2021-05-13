@@ -12,6 +12,7 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
+import hvac
 import logging
 
 from ops.charm import CharmBase
@@ -35,12 +36,17 @@ class VaultCharm(CharmBase):
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         # self.framework.observe(self.on.fortune_action, self._on_fortune_action)
-        self._stored.set_default(things=[])
-
+        self._stored.set_default(root_token=None, unseal_key=None)
 
     def _on_install(self, _):
-        pass
-
+        client = hvac.Client(url='http://localhost:8200')
+        if not client.sys.is_initialized():
+            result = client.sys.initialize(secret_shares=1, secret_threshold=1)
+            self._stored.root_token = result['root_token']
+            self._stored.unseal_key = result['keys'][0]
+        client.token = self._stored.root_token
+        if client.sys.is_sealed():
+            client.sys.submit_unseal_key(self._stored.unseal_key)
 
     def _on_config_changed(self, event):
         """Handle the config-changed event"""
@@ -75,7 +81,7 @@ class VaultCharm(CharmBase):
                     "command": "/usr/local/bin/docker-entrypoint.sh server",
                     "startup": "enabled",
                     "environment": {
-                        'VAULT_LOCAL_CONFIG': 
+                        'VAULT_LOCAL_CONFIG':
                             '{ "backend": {"file": {"path": "/srv" } }, '
                             '"listener": {"tcp": {'
                                 '"tls_disable": true, "address": "[::]:8200"} },'
@@ -88,7 +94,6 @@ class VaultCharm(CharmBase):
                 }
             },
         }
-
 
     # def _on_fortune_action(self, event):
     #     """Just an example to show how to receive actions.
@@ -104,7 +109,8 @@ class VaultCharm(CharmBase):
     #     if fail:
     #         event.fail(fail)
     #     else:
-    #         event.set_results({"fortune": "A bug in the code is worth two in the documentation."})
+    #         event.set_results(
+    #           {"fortune": "A bug in the code is worth two in the documentation."})
 
 
 if __name__ == "__main__":
