@@ -23,7 +23,7 @@ from ops.model import ActiveStatus
 logger = logging.getLogger(__name__)
 
 
-STORAGE_PATH = "/var/lib/juju/storage/raft_storage/0"
+STORAGE_PATH = "/var/lib/juju/storage/vault_storage/0"
 
 
 class VaultCharm(CharmBase):
@@ -54,7 +54,8 @@ class VaultCharm(CharmBase):
         # Get the current config
         plan = container.get_plan()
         # Check if there are any changes to services
-        if plan.services != layer["services"]:
+        services = container.get_plan().to_dict().get("services", {})
+        if services != layer["services"]:
             # Changes were made, add the new layer
             container.add_layer("vault", layer, combine=True)
             logging.info("Added updated layer 'vault' to Pebble plan")
@@ -152,4 +153,4 @@ class VaultCharm(CharmBase):
 
 
 if __name__ == "__main__":
-    main(VaultCharm)
+    main(VaultCharm, use_juju_for_storage=True)

@@ -10,7 +10,7 @@ containers:
   vault:
     resource: vault-image
     mounts:
-      - storage: raft-storage
+      - storage: vault-storage
         location: /srv
 
 resources:
@@ -19,6 +19,6 @@ resources:
     description: OCI image for Vault
 
 storage:
-  raft-storage:
+  vault-storage:
     type: filesystem
     minimum-size: 2G
