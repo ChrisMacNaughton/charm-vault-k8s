@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2021 chris
+# Copyright 2021 Chris MacNaughton <chris.macnaughton@canonical.com>, Canonical Ltd.
 # See LICENSE file for licensing details.
 #
 # Learn more at: https://juju.is/docs/sdk

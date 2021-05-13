@@ -1,5 +1,5 @@
 #!/bin/sh -e
-# Copyright 2021 chris
+# Copyright 2021 Chris MacNaughton <chris.macnaughton@canonical.com>, Canonical Ltd.
 # See LICENSE file for licensing details.
 
 if [ -z "$VIRTUAL_ENV" -a -d venv/ ]; then
