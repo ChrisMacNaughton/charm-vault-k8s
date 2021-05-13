@@ -8,7 +8,21 @@ secrets used in modern computing (e.g. passwords, certificates, API keys).
 
 ## Usage
 
-TODO: Provide high-level usage, such as required config or relations
+After deploying the Vault charm, there are actions available to access both
+the root token created at initialization as well as generating a new token
+with an AppRole.
+
+An example to get started with Vault:
+
+    juju run-action --wait vault/leader get-root-token
+    export VAULT_ADDR=http://$IP_OF_VAULT_CONTAINER:8200
+    export VAULT_TOKEN=$TOKEN_FROM_ACTION
+    $ vault secrets list
+    > Path          Type         Accessor              Description
+    > ----          ----         --------              -----------
+    > cubbyhole/    cubbyhole    cubbyhole_67e758ac    per-token private secret storage
+    > identity/     identity     identity_fab0254e     identity store
+    > sys/          system       system_04fe0ff2       system endpoints used for control, policy and debugging
 
 ## Build
 
