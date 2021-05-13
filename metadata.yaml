@@ -1,10 +1,16 @@
 # Copyright 2021 Chris MacNaughton <chris.macnaughton@canonical.com>, Canonical Ltd.
 # See LICENSE file for licensing details.
-name: vault
+name: vault-k8s
+summary: a tool for managing secrets
 description: |
-  TEMPLATE-TODO: fill out the charm's description
-summary: |
-  TEMPLATE-TODO: fill out the charm's summary
+  Vault secures, stores, and tightly controls access to
+  tokens, passwords, certificates, API keys, and other
+  secrets in modern computing. Vault handles leasing, key
+  revocation, key rolling, and auditing. Through a unified
+  API, users can access an encrypted Key/Value store and
+  network encryption-as-a-service, or generate AWS IAM/STS
+  credentials, SQL/NoSQL databases, X.509 certificates,
+  SSH credentials, and more.
 
 containers:
   vault:
