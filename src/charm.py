@@ -112,7 +112,6 @@ class VaultCharm(CharmBase):
         approle_name = event.params['name']
         policy_name = event.params['policy']
         cidr = event.params['cidr']
-        # new_role = (approle_name not in self.client.list_roles())
         self.client.create_role(
             approle_name,
             token_ttl='60s',
@@ -131,25 +130,6 @@ class VaultCharm(CharmBase):
 
     def _get_root_token_action(self, event):
         event.set_results({"token": self._stored.root_token})
-
-        # event.set_results({"token": token, "role_id": role_id})
-
-    # def _on_fortune_action(self, event):
-    #     """Just an example to show how to receive actions.
-
-    #     TEMPLATE-TODO: change this example to suit your needs.
-    #     If you don't need to handle actions, you can remove this method,
-    #     the hook created in __init__.py for it, the corresponding test,
-    #     and the actions.py file.
-
-    #     Learn more about actions at https://juju.is/docs/sdk/actions
-    #     """
-    #     fail = event.params["fail"]
-    #     if fail:
-    #         event.fail(fail)
-    #     else:
-    #         event.set_results(
-    #           {"fortune": "A bug in the code is worth two in the documentation."})
 
 
 if __name__ == "__main__":
