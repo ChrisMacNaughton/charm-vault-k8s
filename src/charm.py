@@ -153,4 +153,6 @@ class VaultCharm(CharmBase):
 
 
 if __name__ == "__main__":
+    # use_juju_for_storage is used to workaround
+    # https://github.com/canonical/operator/issues/506
     main(VaultCharm, use_juju_for_storage=True)
