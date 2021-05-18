@@ -15,6 +15,11 @@ develop a new k8s charm using the Operator Framework:
 import hvac
 import logging
 
+from charms.icey_vault_k8s.v0.certificates import (
+    CertificatesCharmEvents,
+    CertificatesProvides,
+)
+
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
@@ -24,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 STORAGE_PATH = "/var/lib/juju/storage/vault_storage/0"
+CHARM_PKI_MP = "charm-pki-local"
+CHARM_PKI_ROLE = "local"
+CHARM_PKI_ROLE_CLIENT = "local-client"
 
 
 class VaultCharm(CharmBase):
@@ -31,6 +39,7 @@ class VaultCharm(CharmBase):
 
     _stored = StoredState()
     client = None
+    on = CertificatesCharmEvents()
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -45,14 +54,17 @@ class VaultCharm(CharmBase):
         if self._stored.root_token:
             self.client.token = self._stored.root_token
 
+        # 'certificates' relation handling.
+        self.certificates = CertificatesProvides(self)
+        # When the 'certificates' is ready to configure, do so.
+        # self.framework.observe(self.on.certificates_available, self._on_certificates_available)
+
     def _on_config_changed(self, event):
         """Handle the config-changed event"""
         # Get the vault container so we can configure/manipulate it
         container = self.unit.get_container("vault")
         # Create a new config layer
         layer = self._vault_layer()
-        # Get the current config
-        plan = container.get_plan()
         # Check if there are any changes to services
         services = container.get_plan().to_dict().get("services", {})
         if services != layer["services"]:
@@ -66,16 +78,137 @@ class VaultCharm(CharmBase):
             container.start("vault")
             logging.info("Restarted vault service")
 
+        # Initialize vault
         if not self.client.sys.is_initialized():
             result = self.client.sys.initialize(secret_shares=1, secret_threshold=1)
             self._stored.root_token = result['root_token']
             self._stored.unseal_key = result['keys'][0]
         self.client.token = self._stored.root_token
+        # Unseal Vault
         if self.client.sys.is_sealed():
             self.client.sys.submit_unseal_key(self._stored.unseal_key)
 
+        # Setup Vault CA
+        self._generate_root_ca()
         # All is well, set an ActiveStatus
         self.unit.status = ActiveStatus()
+
+    def _generate_root_ca(self,
+                          ttl='87599h', allow_any_name=True, allowed_domains=None,
+                          allow_bare_domains=False, allow_subdomains=False,
+                          allow_glob_domains=True, enforce_hostnames=False,
+                          max_ttl='87598h'):
+        """Configure Vault to generate a self-signed root CA.
+        :param ttl: TTL of the root CA certificate
+        :type ttl: string
+        :param allow_any_name: Specifies if clients can request certs for any CN.
+        :type allow_any_name: bool
+        :param allow_any_name: List of CNs for which clients can request certs.
+        :type allowed_domains: list
+        :param allow_bare_domains: Specifies if clients can request certs for CNs
+                                   exactly matching those in allowed_domains.
+        :type allow_bare_domains: bool
+        :param allow_subdomains: Specifies if clients can request certificates with
+                                 CNs that are subdomains of those in
+                                 allowed_domains, including wildcard subdomains.
+        :type allow_subdomains: bool
+        :param allow_glob_domains: Specifies whether CNs in allowed-domains can
+                                   contain glob patterns (e.g.,
+                                   'ftp*.example.com'), in which case clients will
+                                   be able to request certificates for any CN
+                                   matching the glob pattern.
+        :type allow_glob_domains: bool
+        :param enforce_hostnames: Specifies if only valid host names are allowed
+                                  for CNs, DNS SANs, and the host part of email
+                                  addresses.
+        :type enforce_hostnames: bool
+        :param max_ttl: Specifies the maximum Time To Live for generated certs.
+        :type max_ttl: str
+        """
+        client = self.client
+        self._configure_pki_backend(CHARM_PKI_MP)
+        if self.is_ca_ready(CHARM_PKI_MP, CHARM_PKI_ROLE):
+            return
+        config = {
+            'common_name': ("Vault Root Certificate Authority "
+                            "({})".format(CHARM_PKI_MP)),
+            'ttl': ttl,
+        }
+        csr_info = client.write(
+            '{}/root/generate/internal'.format(CHARM_PKI_MP),
+            **config)
+        if not csr_info['data']:
+            raise Exception(csr_info.get('warnings', 'unknown error'))
+        cert = csr_info['data']['certificate']
+        # Generated certificates can have the CRL location and the location of the
+        # issuing certificate encoded.
+        # addr = vault.get_access_address()
+        # client.write(
+        #     '{}/config/urls'.format(CHARM_PKI_MP),
+        #     issuing_certificates="{}/v1/{}/ca".format(addr, CHARM_PKI_MP),
+        #     crl_distribution_points="{}/v1/{}/crl".format(addr, CHARM_PKI_MP)
+        # )
+
+        self._write_roles(
+            allow_any_name=allow_any_name,
+            allowed_domains=allowed_domains,
+            allow_bare_domains=allow_bare_domains,
+            allow_subdomains=allow_subdomains,
+            allow_glob_domains=allow_glob_domains,
+            enforce_hostnames=enforce_hostnames,
+            max_ttl=max_ttl,
+            client_flag=True)
+        return cert
+
+    def sign_csr(self, csr, ttl='87599h'):
+        return self.client.write(
+            '{}/root/sign-intermediate'.format(CHARM_PKI_MP),
+            csr=csr, format='pem_bundle', ttl=ttl)['data']['certificate']
+
+    def _write_roles(self, **kwargs):
+        # Configure a role for using this PKI to issue server certs
+        self.client.write(
+            '{}/roles/{}'.format(CHARM_PKI_MP, CHARM_PKI_ROLE),
+            server_flag=True,
+            **kwargs)
+        # Configure a role for using this PKI to issue client-only certs
+        self.client.write(
+            '{}/roles/{}'.format(CHARM_PKI_MP, CHARM_PKI_ROLE_CLIENT),
+            server_flag=False,  # client certs cannot be used as server certs
+            **kwargs)
+
+    def _configure_pki_backend(self, name, ttl=None, max_ttl=None):
+        """Ensure a pki backend is enabled
+        :param client: Vault client
+        :type client: hvac.Client
+        :param name: Name of backend to enable
+        :type name: str
+        :param ttl: TTL
+        :type ttl: str
+        """
+        if not self._is_backend_mounted(name):
+            self.client.enable_secret_backend(
+                backend_type='pki',
+                description='Charm created PKI backend',
+                mount_point=name,
+                # Default ttl to 10 years
+                config={
+                    'default_lease_ttl': ttl or '8759h',
+                    'max_lease_ttl': max_ttl or '87600h'})
+
+    def _is_backend_mounted(self, name):
+        """Check if the supplied backend is mounted
+        :returns: Whether mount point is in use
+        :rtype: bool
+        """
+        return '{}/'.format(name) in self.client.list_secret_backends()
+
+    def is_ca_ready(self, name, role):
+        """Check if CA is ready for use
+        :returns: Whether CA is ready
+        :rtype: bool
+        """
+        return self.client.read('{}/roles/{}'.format(name, role)) is not None
 
     def _vault_layer(self):
         return {
@@ -130,6 +263,11 @@ class VaultCharm(CharmBase):
 
     def _get_root_token_action(self, event):
         event.set_results({"token": self._stored.root_token})
+
+    # def _on_certificates_available(self, event):
+    #     logger.warning("Event: %s", repr(event.certificates_data))
+    #     certificate = self.sign_csr(event.certificates_data['service-certificate-signing-request'])
+    #     event.event.relation.data[self.model.app]['certificate'] = str(certificate)
 
 
 if __name__ == "__main__":

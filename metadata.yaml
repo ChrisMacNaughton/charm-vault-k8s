@@ -1,6 +1,6 @@
 # Copyright 2021 Chris MacNaughton <chris.macnaughton@canonical.com>, Canonical Ltd.
 # See LICENSE file for licensing details.
-name: vault-k8s
+name: icey-vault-k8s
 summary: a tool for managing secrets
 description: |
   Vault secures, stores, and tightly controls access to
@@ -28,3 +28,7 @@ storage:
   vault-storage:
     type: filesystem
     minimum-size: 2G
+
+provides:
+  certificates:
+    interface: certificates
