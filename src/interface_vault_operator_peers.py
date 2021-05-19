@@ -30,8 +30,8 @@ class VaultOperatorPeerEvents(ObjectEvents):
 
 class VaultOperatorPeers(Object):
 
-    ROOT_TOKEN = None
-    UNSEAL_KEY = None
+    ROOT_TOKEN = 'root-token'
+    UNSEAL_KEY = 'unseal-key'
 
     on = VaultOperatorPeerEvents()
 
@@ -44,8 +44,6 @@ class VaultOperatorPeers(Object):
         self.framework.observe(
             charm.on[relation_name].relation_changed,
             self.on_changed)
-        self.ROOT_TOKEN = self.root_token
-        self.UNSEAL_KEY = self.unseal_key
 
     @property
     def peers_rel(self):
@@ -62,20 +60,20 @@ class VaultOperatorPeers(Object):
 
     def set_root_token(self, token):
         logging.info("Setting root token")
-        self.peers_rel.data[self.peers_rel.app]['root-token'] = token
+        self.peers_rel.data[self.peers_rel.app][self.ROOT_TOKEN] = token
 
     def set_unseal_key(self, unseal_key):
         logging.info("Setting unseal key")
-        self.peers_rel.data[self.peers_rel.app]['unseal-key'] = unseal_key
+        self.peers_rel.data[self.peers_rel.app][self.UNSEAL_KEY] = unseal_key
 
     @property
     def root_token(self):
         if not self.peers_rel:
             return None
-        return self.peers_rel.data[self.peers_rel.app].get('root-token')
+        return self.peers_rel.data[self.peers_rel.app].get(self.ROOT_TOKEN)
 
     @property
     def unseal_key(self):
         if not self.peers_rel:
             return None
-        return self.peers_rel.data[self.peers_rel.app].get('unseal-key')
+        return self.peers_rel.data[self.peers_rel.app].get(self.UNSEAL_KEY)
