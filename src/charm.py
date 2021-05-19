@@ -13,6 +13,7 @@ develop a new k8s charm using the Operator Framework:
 """
 
 import hvac
+import json
 import logging
 import os
 
@@ -25,7 +26,7 @@ import interface_vault_operator_peers
 
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus
+from ops.model import ActiveStatus
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class VaultCharm(CharmBase):
         # All is well, set an ActiveStatus
         self.unit.status = ActiveStatus()
 
-    def _on_has_peers(self, _event):
+    def _on_has_peers(self, event):
         self._on_config_changed(event)
 
     def _generate_root_ca(self,
@@ -226,7 +227,22 @@ class VaultCharm(CharmBase):
         return str(self.model.get_binding(peer_relation).network.bind_address)
 
     def _vault_layer(self):
-        backends = ['{ "backend": {"file": {"path": "/srv" } }, ',]
+        backends = {"file": {"path": "/srv"}}
+        vault_config = {
+            'backend': backends,
+            'listener': {
+                'tcp': {
+                    'tls_disable': True,
+                    'address': '[::]:8200'
+                }
+            },
+            'default_lease_ttl': '168h',
+            'max_lease_ttl': '720h',
+            'disable_mlock': True,
+            'cluster_addr': f"http://{self._bind_address}:8201",
+            'api_addr': f"http://{self._bind_address}:8200",
+        }
+
         return {
             "summary": "vault layer",
             "description": "pebble config layer for vault",
@@ -237,14 +253,7 @@ class VaultCharm(CharmBase):
                     "command": "/usr/local/bin/docker-entrypoint.sh server",
                     "startup": "enabled",
                     "environment": {
-                        'VAULT_LOCAL_CONFIG':
-                            f'{' '.join([ backend for backend in backends])}'
-                            '"listener": {"tcp": {'
-                                '"tls_disable": true, "address": "[::]:8200"} },'
-                            '"default_lease_ttl": "168h", "max_lease_ttl": "720h", '
-                            '"disable_mlock": true, '
-                            f'"cluster_addr": "http://{self._bind_address}:8201",'
-                            f'"api_addr": "http://{self._bind_address}:8200"',
+                        'VAULT_LOCAL_CONFIG': json.dumps(vault_config),
                         'VAULT_API_ADDR': 'http://[::]:8200',
                     },
                 }

@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from charm import VaultCharm
 from ops.model import ActiveStatus
@@ -17,6 +17,9 @@ class TestCharm(unittest.TestCase):
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
         self.harness.charm.client = Mock()
+        self.harness.charm.client.list_secret_backends.return_value = 'secret'
+        self.harness.charm.peers = Mock()
+        self.maxDiff = 4000
 
     def test_vault_layer(self):
         # Test with empty config.
@@ -31,21 +34,24 @@ class TestCharm(unittest.TestCase):
                     "startup": "enabled",
                     "environment": {
                         'VAULT_LOCAL_CONFIG':
-                            '{ "backend": {"file": {"path": "/srv" } }, '
+                            '{"backend": {"file": {"path": "/srv"}}, '
                             '"listener": {"tcp": {'
-                                '"tls_disable": true, "address": "[::]:8200"} },'
+                                '"tls_disable": true, "address": "[::]:8200"}}, '
                             '"default_lease_ttl": "168h", "max_lease_ttl": "720h", '
                             '"disable_mlock": true, '
-                            '"cluster_addr": "http://[::]:8201",'
-                            '"api_addr": "http://[::]:8200"}',
+                            '"cluster_addr": "http://127.0.1.1:8201", '
+                            '"api_addr": "http://127.0.1.1:8200"}',
                         'VAULT_API_ADDR': 'http://[::]:8200',
                     },
                 }
             },
         }
+        VaultCharm._bind_address = '127.0.1.1'
         self.assertEqual(self.harness.charm._vault_layer(), expected)
 
-    def test_on_config_changed(self):
+    @patch('os.chown')
+    @patch('charm.VaultCharm._bind_address')
+    def test_on_config_changed(self, _mock_bind_address, _chown):
         plan = self.harness.get_container_pebble_plan("vault")
         self.assertEqual(plan.to_dict(), {})
         self.harness.update_config()
@@ -60,22 +66,33 @@ class TestCharm(unittest.TestCase):
         container = self.harness.model.unit.get_container("vault")
         self.assertEqual(container.get_service("vault").is_running(), True)
 
-    def test_on_config_changed_initialized_unsealed(self):
+    @patch('os.chown')
+    @patch('charm.VaultCharm._bind_address')
+    def test_on_config_changed_initialized_unsealed(self, _mock_bind_address, _chown):
         self.harness.charm.client.sys.is_initialized.return_value = True
         self.harness.charm.client.sys.is_sealed.return_value = False
         self.harness.charm._on_config_changed("mock_event")
 
-    def test_on_config_changed_initialized(self):
+    @patch('charm.VaultCharm.unit')
+    @patch('os.chown')
+    @patch('charm.VaultCharm._bind_address')
+    def test_on_config_changed_uninitialized(self, _mock_bind_address, _chown, _unit):
         self.harness.charm.client.sys.is_initialized.return_value = False
         self.harness.charm.client.sys.is_sealed.return_value = True
         self.harness.charm.client.sys.initialize.return_value = {
             'root_token': 'test123', 'keys': [123]}
+        _unit.is_leader.return_value = True
+        self.harness.charm.peers.unseal_key = 123
         self.harness.charm._on_config_changed("mock_event")
         self.harness.charm.client.sys.initialize.assert_called_once_with(
             secret_shares=1, secret_threshold=1)
+        self.harness.charm.peers.set_root_token.assert_called_once_with('test123')
+        self.harness.charm.peers.set_unseal_key.assert_called_once_with(123)
         self.harness.charm.client.sys.submit_unseal_key.assert_called_once_with(123)
 
-    def test_on_config_changed_initialized_sealed(self):
+    @patch('os.chown')
+    @patch('charm.VaultCharm._bind_address')
+    def test_on_config_changed_initialized_sealed(self, _mock_bind_address, _chown):
         self.harness.charm.client.sys.is_initialized.return_value = True
         self.harness.charm.client.sys.is_sealed.return_value = True
         self.harness.charm.peers.unseal_key = 1234

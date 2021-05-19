@@ -7,7 +7,6 @@ Work in progress interface for Vault peer relations
 import logging
 
 from ops.framework import (
-    StoredState,
     EventBase,
     ObjectEvents,
     EventSource,
