@@ -14,7 +14,7 @@ with an AppRole.
 
 An example to get started with Vault:
 
-    juju run-action --wait vault/leader get-root-token
+    juju run-action --wait icey-vault-k8s/leader get-root-token
     export VAULT_ADDR=http://$IP_OF_VAULT_CONTAINER:8200
     export VAULT_TOKEN=$TOKEN_FROM_ACTION
     $ vault secrets list
@@ -36,7 +36,16 @@ To build:
 
 Run it like so:
 
-    juju deploy ./vault.charm --resource vault-image=vault
+    juju deploy ./icey-vault-k8s.charm --resource vault-image=vault
+
+To use Vault to sign certificates for another charm:
+
+    juju deploy ./certificates-test-charm.charm --resource=httpbin-image=kennethreitz/httpbin
+    juju add-relation icey-vault-k8s certificates-test-charm
+
+The charm requiring a certificate will send a Certificate Signing Request (CSR)
+that Vault will sign, and then the Vault charm will return the certificate to
+the requesting charm!
 
 ## Developing
 
