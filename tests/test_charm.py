@@ -78,7 +78,7 @@ class TestCharm(unittest.TestCase):
     def test_on_config_changed_initialized_sealed(self):
         self.harness.charm.client.sys.is_initialized.return_value = True
         self.harness.charm.client.sys.is_sealed.return_value = True
-        self.harness.charm._stored.unseal_key = 1234
+        self.harness.charm.peers.unseal_key = 1234
         self.harness.charm._on_config_changed("mock_event")
         self.harness.charm.client.sys.submit_unseal_key.assert_called_once_with(1234)
 
@@ -120,6 +120,6 @@ class TestCharm(unittest.TestCase):
 
     def test_get_root_token_action(self):
         mock_event = Mock()
-        self.harness.charm._stored.root_token = "root-token-123"
+        self.harness.charm.peers.root_token = "root-token-123"
         self.harness.charm._get_root_token_action(mock_event)
         mock_event.called_once_with({"token": "root-token-123"})

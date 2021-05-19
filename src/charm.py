@@ -20,11 +20,12 @@ from charms.icey_vault_k8s.v0.certificates import (
     CertificatesCharmEvents,
     CertificatesProvides,
 )
+import interface_vault_operator_peers
+
 
 from ops.charm import CharmBase
-from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus
+from ops.model import ActiveStatus, MaintenanceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,6 @@ CHARM_PKI_ROLE_CLIENT = "local-client"
 class VaultCharm(CharmBase):
     """Charm the service."""
 
-    _stored = StoredState()
     client = None
     on = CertificatesCharmEvents()
 
@@ -50,10 +50,13 @@ class VaultCharm(CharmBase):
         self.framework.observe(self.on.new_app_role_action, self._new_app_role_action)
         self.framework.observe(self.on.get_token_action, self._get_token_action)
         self.framework.observe(self.on.get_root_token_action, self._get_root_token_action)
-        self._stored.set_default(root_token=None, unseal_key=None)
         self.client = hvac.Client(url='http://localhost:8200')
-        if self._stored.root_token:
-            self.client.token = self._stored.root_token
+        # Peers
+        self.peers = interface_vault_operator_peers.VaultOperatorPeers(self, "peers")
+        self.framework.observe(self.peers.on.has_peers, self._on_has_peers)
+
+        if self.peers.root_token:
+            self.client.token = self.peers.root_token
 
         # 'certificates' relation handling.
         self.certificates = CertificatesProvides(self)
@@ -82,19 +85,23 @@ class VaultCharm(CharmBase):
         os.chown(STORAGE_PATH, uid=100, gid=1000)
 
         # Initialize vault
-        if not self.client.sys.is_initialized():
-            result = self.client.sys.initialize(secret_shares=1, secret_threshold=1)
-            self._stored.root_token = result['root_token']
-            self._stored.unseal_key = result['keys'][0]
-        self.client.token = self._stored.root_token
+        if self.unit.is_leader():
+            if not self.client.sys.is_initialized():
+                result = self.client.sys.initialize(secret_shares=1, secret_threshold=1)
+                self.peers.set_root_token(result['root_token'])
+                self.peers.set_unseal_key(result['keys'][0])
+            self.client.token = self.peers.root_token
         # Unseal Vault
-        if self.client.sys.is_sealed():
-            self.client.sys.submit_unseal_key(self._stored.unseal_key)
+        if self.client.sys.is_sealed() && self.peers.unseal_key:
+            self.client.sys.submit_unseal_key(self.peers.unseal_key)
 
         # Setup Vault CA
         self._generate_root_ca()
         # All is well, set an ActiveStatus
         self.unit.status = ActiveStatus()
+
+    def _on_has_peers(self, _event):
+        self._on_config_changed(event)
 
     def _generate_root_ca(self,
                           ttl='87599h', allow_any_name=True, allowed_domains=None,
@@ -265,15 +272,9 @@ class VaultCharm(CharmBase):
         event.set_results({"token": response['wrap_info']['token']})
 
     def _get_root_token_action(self, event):
-        event.set_results({"token": self._stored.root_token})
-
-    # def _on_certificates_available(self, event):
-    #     logger.warning("Event: %s", repr(event.certificates_data))
-    #     certificate = self.sign_csr(event.certificates_data['service-certificate-signing-request'])
-    #     event.event.relation.data[self.model.app]['certificate'] = str(certificate)
+        event.set_results({"token": self.peers.root_token})
 
 
 if __name__ == "__main__":
     # use_juju_for_storage is used to workaround
-    # https://github.com/canonical/operator/issues/506
-    main(VaultCharm, use_juju_for_storage=True)
+    main(VaultCharm)
