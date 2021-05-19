@@ -80,6 +80,7 @@ logger = logging.getLogger(__name__)
 
 class CertificatesAvailableEvent(EventBase):
     certificates_data = None
+
     def __init__(self, handle, certificates_data=None):
         super().__init__(handle)
         self.certificates_data = certificates_data
@@ -112,7 +113,8 @@ class CertificatesRequires(Object):
     def __init__(self, charm, config_dict):
         super().__init__(charm, "certificates")
 
-        self.framework.observe(charm.on["certificates"].relation_changed, self._on_relation_changed)
+        self.framework.observe(
+            charm.on["certificates"].relation_changed, self._on_relation_changed)
         self.charm = charm
         self.config_dict = config_dict
 
@@ -122,7 +124,8 @@ class CertificatesRequires(Object):
         unknown = [
             x
             for x in self.config_dict
-            if x not in REQUIRED_CERTIFICATES_RELATION_FIELDS | OPTIONAL_CERTIFICATES_RELATION_FIELDS
+            if x not in
+            REQUIRED_CERTIFICATES_RELATION_FIELDS | OPTIONAL_CERTIFICATES_RELATION_FIELDS
         ]
         if unknown:
             logger.error(
@@ -132,7 +135,8 @@ class CertificatesRequires(Object):
             self.model.unit.status = BlockedStatus(blocked_message)
             return True
         if not update_only:
-            missing = [x for x in REQUIRED_CERTIFICATES_RELATION_FIELDS if x not in self.config_dict]
+            missing = [
+                x for x in REQUIRED_CERTIFICATES_RELATION_FIELDS if x not in self.config_dict]
             if missing:
                 logger.error(
                     "Certificate relation error, missing required key(s) in config dictionary: %s",
@@ -154,7 +158,8 @@ class CertificatesRequires(Object):
             logger.info("relation data: %s", repr(event.relation.data[event.app]))
             certificate = event.relation.data[event.app].get('certificate')
             if certificate:
-                self.charm.on.certificates_available.emit(certificates_data={'certificate': certificate})
+                self.charm.on.certificates_available.emit(
+                    certificates_data={'certificate': certificate})
 
     def update_config(self, config_dict):
         """Allow for updates to relation.
@@ -183,7 +188,8 @@ class CertificatesProvides(Object):
         super().__init__(charm, "certificates")
         # Observe the relation-changed hook event and bind
         # self.on_relation_changed() to handle the event.
-        self.framework.observe(charm.on["certificates"].relation_changed, self._on_relation_changed)
+        self.framework.observe(
+            charm.on["certificates"].relation_changed, self._on_relation_changed)
         self.charm = charm
 
     def _on_relation_changed(self, event):
@@ -196,7 +202,8 @@ class CertificatesProvides(Object):
         try:
             certificates_data = {
                 field: event.relation.data[event.app].get(field)
-                for field in REQUIRED_CERTIFICATES_RELATION_FIELDS | OPTIONAL_CERTIFICATES_RELATION_FIELDS
+                for field in
+                REQUIRED_CERTIFICATES_RELATION_FIELDS | OPTIONAL_CERTIFICATES_RELATION_FIELDS
             }
         except KeyError:
             logger.info("Apparently the relation has gone away!")
@@ -224,7 +231,8 @@ class CertificatesProvides(Object):
         # self.charm.on.certificates_available.emit(certificates_data=certificates_data)
         try:
             if self.charm.is_ca_ready():
-                certificate = self.charm.sign_csr(certificates_data['service-certificate-signing-request'])
+                certificate = self.charm.sign_csr(
+                    certificates_data['service-certificate-signing-request'])
                 event.relation.data[self.model.app]['certificate'] = str(certificate)
                 self.model.unit.status = ActiveStatus()
             else:
