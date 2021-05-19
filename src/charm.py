@@ -92,7 +92,7 @@ class VaultCharm(CharmBase):
                 self.peers.set_unseal_key(result['keys'][0])
             self.client.token = self.peers.root_token
         # Unseal Vault
-        if self.client.sys.is_sealed() && self.peers.unseal_key:
+        if self.client.sys.is_sealed() and self.peers.unseal_key:
             self.client.sys.submit_unseal_key(self.peers.unseal_key)
 
         # Setup Vault CA
@@ -220,7 +220,13 @@ class VaultCharm(CharmBase):
         """
         return self.client.read('{}/roles/{}'.format(name, role)) is not None
 
+    @property
+    def _bind_address(self):
+        peer_relation = self.model.get_relation("peers")
+        return str(self.model.get_binding(peer_relation).network.bind_address)
+
     def _vault_layer(self):
+        backends = ['{ "backend": {"file": {"path": "/srv" } }, ',]
         return {
             "summary": "vault layer",
             "description": "pebble config layer for vault",
@@ -232,13 +238,13 @@ class VaultCharm(CharmBase):
                     "startup": "enabled",
                     "environment": {
                         'VAULT_LOCAL_CONFIG':
-                            '{ "backend": {"file": {"path": "/srv" } }, '
+                            f'{' '.join([ backend for backend in backends])}'
                             '"listener": {"tcp": {'
                                 '"tls_disable": true, "address": "[::]:8200"} },'
                             '"default_lease_ttl": "168h", "max_lease_ttl": "720h", '
                             '"disable_mlock": true, '
-                            '"cluster_addr": "http://[::]:8201",'
-                            '"api_addr": "http://[::]:8200"}',
+                            f'"cluster_addr": "http://{self._bind_address}:8201",'
+                            f'"api_addr": "http://{self._bind_address}:8200"',
                         'VAULT_API_ADDR': 'http://[::]:8200',
                     },
                 }
