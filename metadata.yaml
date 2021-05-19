@@ -27,7 +27,7 @@ resources:
 storage:
   vault-storage:
     type: filesystem
-    minimum-size: 2G
+    minimum-size: 10G
 
 provides:
   certificates:

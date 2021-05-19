@@ -14,6 +14,7 @@ develop a new k8s charm using the Operator Framework:
 
 import hvac
 import logging
+import os
 
 from charms.icey_vault_k8s.v0.certificates import (
     CertificatesCharmEvents,
@@ -28,7 +29,7 @@ from ops.model import ActiveStatus
 logger = logging.getLogger(__name__)
 
 
-STORAGE_PATH = "/var/lib/juju/storage/vault_storage/0"
+STORAGE_PATH = "/var/lib/juju/storage/vault-storage/0"
 CHARM_PKI_MP = "charm-pki-local"
 CHARM_PKI_ROLE = "local"
 CHARM_PKI_ROLE_CLIENT = "local-client"
@@ -77,6 +78,8 @@ class VaultCharm(CharmBase):
             # Restart it and report a new status to Juju
             container.start("vault")
             logging.info("Restarted vault service")
+        # Fix up storage permissions (broken on CDK on AWS otherwise)'
+        os.chown(STORAGE_PATH, uid=100, gid=1000)
 
         # Initialize vault
         if not self.client.sys.is_initialized():
@@ -203,7 +206,7 @@ class VaultCharm(CharmBase):
         """
         return '{}/'.format(name) in self.client.list_secret_backends()
 
-    def is_ca_ready(self, name, role):
+    def is_ca_ready(self, name=CHARM_PKI_MP, role=CHARM_PKI_ROLE):
         """Check if CA is ready for use
         :returns: Whether CA is ready
         :rtype: bool

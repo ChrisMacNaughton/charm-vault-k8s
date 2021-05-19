@@ -13,7 +13,7 @@ import logging
 
 from ops.charm import CharmEvents
 from ops.framework import EventBase, EventSource, Object
-from ops.model import BlockedStatus
+from ops.model import ActiveStatus, BlockedStatus
 
 # The unique Charmhub library identifier, never change it
 LIBID = "1ae5557f795442119164fe6ce0e85eaf"
@@ -26,11 +26,11 @@ LIBAPI = 0
 LIBPATCH = 1
 
 REQUIRED_CERTIFICATES_RELATION_FIELDS = {
-    "service-hostname",
+    "service-certificate-signing-request",
 }
 
 OPTIONAL_CERTIFICATES_RELATION_FIELDS = {
-    "service-certificate-signing-request",
+    "service-hostname",
 }
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class CertificatesRequires(Object):
         super().__init__(charm, "certificates")
 
         self.framework.observe(charm.on["certificates"].relation_changed, self._on_relation_changed)
-
+        self.charm = charm
         self.config_dict = config_dict
 
     def _config_dict_errors(self, update_only=False):
@@ -105,6 +105,11 @@ class CertificatesRequires(Object):
             for key in self.config_dict:
                 event.relation.data[self.model.app][key] = str(self.config_dict[key])
 
+            logger.info("relation data: %s", repr(event.relation.data[event.app]))
+            certificate = event.relation.data[event.app].get('certificate')
+            if certificate:
+                self.charm.on.certificates_available.emit(certificates_data={'certificate': certificate})
+
     def update_config(self, config_dict):
         """Allow for updates to relation."""
         if self.model.unit.is_leader():
@@ -124,8 +129,6 @@ class CertificatesProvides(Object):
         - relation-changed
     """
 
-    certificates_data = {}
-
     def __init__(self, charm):
         super().__init__(charm, "certificates")
         # Observe the relation-changed hook event and bind
@@ -140,11 +143,14 @@ class CertificatesProvides(Object):
         # `self.unit` isn't available here, so use `self.model.unit`.
         if not self.model.unit.is_leader():
             return
-        logger.info("relation data: %s", repr(event.relation.data[event.app]))
-        certificates_data = {
-            field: event.relation.data[event.app].get(field)
-            for field in REQUIRED_CERTIFICATES_RELATION_FIELDS | OPTIONAL_CERTIFICATES_RELATION_FIELDS
-        }
+        try:
+            certificates_data = {
+                field: event.relation.data[event.app].get(field)
+                for field in REQUIRED_CERTIFICATES_RELATION_FIELDS | OPTIONAL_CERTIFICATES_RELATION_FIELDS
+            }
+        except KeyError:
+            logger.info("Apparently the relation has gone away!")
+            return
         logger.info("Certificates data: %s", json.dumps(certificates_data))
         missing_fields = sorted(
             [
@@ -170,5 +176,10 @@ class CertificatesProvides(Object):
             if self.charm.is_ca_ready():
                 certificate = self.charm.sign_csr(certificates_data['service-certificate-signing-request'])
                 event.relation.data[self.model.app]['certificate'] = str(certificate)
-        except Exception:
+                self.model.unit.status = ActiveStatus()
+            else:
+                logger.debug("CA isn't ready")
+                event.defer()
+        except Exception as e:
+            logger.warning(f"Error in setting up certificate: {e}")
             event.defer()
