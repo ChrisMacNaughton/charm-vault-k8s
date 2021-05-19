@@ -7,7 +7,49 @@ Import `CertificateRequires` in your charm, with two required options:
     - "self" (the charm itself)
     - config_dict
 
+A basic example showing the usage of this relation follows:
+
+```
+import logging
+
+from charms.icey_vault_k8s.v0.certificates import (
+    CertificatesCharmEvents,
+    CertificatesRequires
+)
+
+from ops.charm import CharmBase
+from ops.framework import StoredState
+from ops.main import main
+from ops.model import ActiveStatus
+
+logger = logging.getLogger(__name__)
+
+
+class CertificatesTestCharmCharm(CharmBase):
+
+    on = CertificatesCharmEvents()
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        # When the 'certificates' is ready to configure, do so.
+        self.framework.observe(self.on.certificates_available, self._on_certificates_available)
+        self.certificates = CertificatesRequires(self, {
+            "service-certificate-signing-request": self._get_csr()
+        })
+
+    def _get_csr(self):
+        return open('./server.csr').read()
+
+    def _on_certificates_available(self, event):
+        logger.info(f"Certificate: {event.certificates_data['certificate']}")
+        self.unit.status = ActiveStatus(message='Certificate has been received!')
+
+
+if __name__ == "__main__":
+    main(CertificatesTestCharmCharm, use_juju_for_storage=True)
+```
 """
+
 import json
 import logging
 
@@ -62,6 +104,10 @@ class CertificatesRequires(Object):
 
     Hook events observed:
         - relation-changed
+
+    When the requested certificate is available, this class will emit:
+
+    certificates_available
     """
     def __init__(self, charm, config_dict):
         super().__init__(charm, "certificates")
@@ -111,7 +157,11 @@ class CertificatesRequires(Object):
                 self.charm.on.certificates_available.emit(certificates_data={'certificate': certificate})
 
     def update_config(self, config_dict):
-        """Allow for updates to relation."""
+        """Allow for updates to relation.
+
+        When a new certificate is required, it can be requested
+        via this function.
+        """
         if self.model.unit.is_leader():
             self.config_dict = config_dict
             if self._config_dict_errors(update_only=True):
