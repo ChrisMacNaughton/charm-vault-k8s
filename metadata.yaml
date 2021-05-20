@@ -12,6 +12,8 @@ description: |
   credentials, SQL/NoSQL databases, X.509 certificates,
   SSH credentials, and more.
 
+docs: https://discourse.charmhub.io/t/icey-vault-k8s-docs-index/4611
+
 containers:
   vault:
     resource: vault-image
