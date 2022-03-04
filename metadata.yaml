@@ -35,6 +35,9 @@ provides:
   certificates:
     interface: certificates
 
+  insecure-certificates:
+    interface: tls-certificates
+
 peers:
   peers:
     interface: vault-peer

@@ -30,6 +30,7 @@ class VaultOperatorPeerEvents(ObjectEvents):
 class VaultOperatorPeers(Object):
 
     ROOT_TOKEN = 'root-token'
+    ROOT_CA = 'root-ca'
     UNSEAL_KEY = 'unseal-key'
 
     on = VaultOperatorPeerEvents()
@@ -61,6 +62,12 @@ class VaultOperatorPeers(Object):
         logging.info("Setting root token")
         self.peers_rel.data[self.peers_rel.app][self.ROOT_TOKEN] = token
 
+    def set_root_ca(self, ca):
+        if self.root_ca is not None:
+            return
+        logging.info(f"Setting root CA to {ca}")
+        self.peers_rel.data[self.peers_rel.app][self.ROOT_CA] = ca
+
     def set_unseal_key(self, unseal_key):
         logging.info("Setting unseal key")
         self.peers_rel.data[self.peers_rel.app][self.UNSEAL_KEY] = unseal_key
@@ -76,3 +83,9 @@ class VaultOperatorPeers(Object):
         if not self.peers_rel:
             return None
         return self.peers_rel.data[self.peers_rel.app].get(self.UNSEAL_KEY)
+
+    @property
+    def root_ca(self):
+        if not self.peers_rel:
+            return None
+        return self.peers_rel.data[self.peers_rel.app].get(self.ROOT_CA)

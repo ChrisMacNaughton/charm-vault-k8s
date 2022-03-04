@@ -16,10 +16,14 @@ import hvac
 import json
 import logging
 import os
+import charmhelpers.contrib.network.ip as ch_ip
 
 from charms.icey_vault_k8s.v0.certificates import (
     CertificatesCharmEvents,
     CertificatesProvides,
+)
+from charms.icey_vault_k8s.v0.insecure_certificates import (
+    InsecureCertificatesProvides,
 )
 import interface_vault_operator_peers
 
@@ -61,6 +65,7 @@ class VaultCharm(CharmBase):
 
         # 'certificates' relation handling.
         self.certificates = CertificatesProvides(self)
+        self.insecure_certificates = InsecureCertificatesProvides(self)
         # When the 'certificates' is ready to configure, do so.
         # self.framework.observe(self.on.certificates_available, self._on_certificates_available)
 
@@ -97,7 +102,8 @@ class VaultCharm(CharmBase):
             self.client.sys.submit_unseal_key(self.peers.unseal_key)
 
         # Setup Vault CA
-        self._generate_root_ca()
+        root_ca = self._generate_root_ca()
+        self.peers.set_root_ca(root_ca)
         # All is well, set an ActiveStatus
         self.unit.status = ActiveStatus()
 
@@ -175,6 +181,46 @@ class VaultCharm(CharmBase):
         return self.client.write(
             '{}/root/sign-intermediate'.format(CHARM_PKI_MP),
             csr=csr, format='pem_bundle', ttl=ttl)['data']['certificate']
+
+    def get_ca(self):
+        self.peers.root_ca
+
+    def issue_certificate(self, certificate_data, cert_type):
+        """Issues a key and certificate to a requesting charm.
+
+        The certificate_data should contain "certificate_name",
+        "common_name", and "sans"
+        """
+        role = None
+        if cert_type == 'server':
+            role = CHARM_PKI_ROLE
+        elif cert_type == 'client':
+            role = CHARM_PKI_ROLE_CLIENT
+        else:
+            raise RuntimeError('Unsupported cert_type: '
+                               '{}'.format(cert_type))
+        common_name = certificate_data['common_name']
+        sans = certificate_data['sans']
+        config = {
+            'common_name': common_name,
+        }
+        if sans:
+            sans = json.loads(sans)
+            ip_sans, alt_names = _sort_sans(sans)
+            if ip_sans:
+                config['ip_sans'] = ','.join(ip_sans)
+            if alt_names:
+                config['alt_names'] = ','.join(alt_names)
+        try:
+            logging.info("About to create a certificate with {}".format(config))
+            response = self.client.write('{}/issue/{}'.format(CHARM_PKI_MP, role),
+                                    **config)
+            if not response['data']:
+                raise RuntimeError(response.get('warnings', 'unknown error'))
+        except hvac.exceptions.InvalidRequest as e:
+            raise RuntimeError(str(e)) from e
+        logging.info(f"new cert data: {response['data']}")
+        return response['data']
 
     def _write_roles(self, **kwargs):
         # Configure a role for using this PKI to issue server certs
@@ -289,6 +335,19 @@ class VaultCharm(CharmBase):
     def _get_root_token_action(self, event):
         event.set_results({"token": self.peers.root_token})
 
+
+def _sort_sans(sans):
+    """
+    Split SANs into IP SANs and name SANs
+    :param sans: List of SANs
+    :type sans: list
+    :returns: List of IP SANs and list of name SANs
+    :rtype: ([], [])
+    """
+    logging.info("Splitting '{}' into IP and alt names".format(sans))
+    ip_sans = {s for s in sans if ch_ip.is_ip(s)}
+    alt_names = set(sans).difference(ip_sans)
+    return sorted(list(ip_sans)), sorted(list(alt_names))
 
 if __name__ == "__main__":
     # use_juju_for_storage is used to workaround
