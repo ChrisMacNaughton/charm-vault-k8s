@@ -11,7 +11,7 @@ description: |
   network encryption-as-a-service, or generate AWS IAM/STS
   credentials, SQL/NoSQL databases, X.509 certificates,
   SSH credentials, and more.
-
+source: https://github.com/ChrisMacNaughton/charm-vault-k8s
 docs: https://discourse.charmhub.io/t/icey-vault-k8s-docs-index/4611
 
 containers:
