@@ -55,3 +55,26 @@ new-app-role:
       description: CIDR to restrict this app role to
       typoe: string
       default: '0.0.0.0/0'
+
+generate-certificate:
+  description: Generate a certificate against the Vault PKI.
+  params:
+    cn:
+      type: string
+      description: >-
+        CN (Common Name) field of the new certificate
+    sans:
+      type: string
+      description: >-
+        Space delimited list of Subject Alternate Name/IP addresse(s).
+      default: ''
+    type:
+      type: string
+      enum:
+        - 'server'
+        - 'client'
+      description: The type of the certificate (server or client)
+      default: 'server'
+  required:
+    - cn
+  additionalProperties: False
