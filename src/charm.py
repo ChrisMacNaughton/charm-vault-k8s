@@ -55,6 +55,9 @@ class VaultCharm(CharmBase):
         self.framework.observe(self.on.new_app_role_action, self._new_app_role_action)
         self.framework.observe(self.on.get_token_action, self._get_token_action)
         self.framework.observe(self.on.get_root_token_action, self._get_root_token_action)
+        self.framework.observe(
+            self.on.generate_certificate_action, self._on_generate_certificate_action
+        )
         self.client = hvac.Client(url='http://localhost:8200')
         # Peers
         self.peers = interface_vault_operator_peers.VaultOperatorPeers(self, "peers")
@@ -73,6 +76,10 @@ class VaultCharm(CharmBase):
         """Handle the config-changed event"""
         # Get the vault container so we can configure/manipulate it
         container = self.unit.get_container("vault")
+        if not container.can_connect():
+            logging.info("Vault container not ready, deferring configuration")
+            event.defer()
+            return
         # Create a new config layer
         layer = self._vault_layer()
         # Check if there are any changes to services
@@ -221,6 +228,36 @@ class VaultCharm(CharmBase):
             raise RuntimeError(str(e)) from e
         logging.info(f"new cert data: {response['data']}")
         return response['data']
+
+    def _on_generate_certificate_action(self, event) -> None:
+        """Generates TLS Certificate.
+
+        Generates a private key and certificate for an external service.
+        Args:
+            event: Juju event.
+        Returns:
+            None
+        """
+        sans = event.params["sans"]
+        if sans:
+            sans = json.dumps(sans.split(" "))
+        data = {
+            "common_name": event.params["cn"],
+            "certificate_name": event.params["cn"],
+            "sans": sans,
+        }
+        certificate = self.issue_certificate(
+            certificate_data=data,
+            cert_type=event.params["type"],
+        )
+        event.set_results(
+            {
+                "private-key": certificate["private_key"],
+                "certificate": certificate["certificate"],
+                "ca-chain": certificate["ca_chain"],
+                "issuing-ca": certificate["issuing_ca"],
+            }
+        )
 
     def _write_roles(self, **kwargs):
         # Configure a role for using this PKI to issue server certs
