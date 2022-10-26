@@ -238,10 +238,13 @@ class VaultCharm(CharmBase):
         Returns:
             None
         """
+        sans = event.params["sans"]
+        if sans:
+            sans = json.dumps(sans.split(" "))
         data = {
             "common_name": event.params["cn"],
             "certificate_name": event.params["cn"],
-            "sans": event.params["sans"],
+            "sans": sans,
         }
         certificate = self.issue_certificate(
             certificate_data=data,
