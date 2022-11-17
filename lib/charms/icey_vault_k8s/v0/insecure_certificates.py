@@ -124,9 +124,12 @@ class InsecureCertificatesProvides(Object):
                 for common_name, certs in certificates.items():
                     logging.info(f"Setting {common_name} certificate_data for {self.model.unit}")
                     event.relation.data[self.model.unit][common_name] = json.dumps(certs)
-                logging.info(f"Setting CA to {ca} for {self.model.unit}")
-                event.relation.data[self.model.unit]['ca'] = str(ca)
-                event.relation.data[self.model.unit]['chain'] = str(ca)
+
+                # NOTE: ensure a good CA cert is written to the relation
+                if ca is not None:
+                    logging.info(f"Setting CA to {ca} for {self.model.unit}")
+                    event.relation.data[self.model.unit]['ca'] = str(ca)
+                    event.relation.data[self.model.unit]['chain'] = str(ca)
             else:
                 logger.info("CA isn't ready")
                 event.defer()
